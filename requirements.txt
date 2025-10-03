@@ -1,0 +1,25 @@
+# Core dependencies for Reddit sentiment signal processing
+pandas>=1.5.0
+numpy>=1.21.0
+mysql-connector-python>=8.0.0
+python-dotenv>=0.19.0
+
+# Reddit API and data processing
+praw>=7.7.0
+requests>=2.28.0
+
+# Sentiment analysis
+textblob>=0.17.0
+vaderSentiment>=3.3.2
+
+# Data processing and utilities
+python-dateutil>=2.8.0
+scipy>=1.9.0
+
+# Logging and configuration
+pyyaml>=6.0
+
+# Optional: Advanced NLP libraries for more sophisticated sentiment analysis
+# nltk>=3.8.0
+# transformers>=4.20.0
+# torch>=1.12.0

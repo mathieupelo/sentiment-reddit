@@ -13,7 +13,7 @@ import logging
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent / 'src'))
 
-from services.simple_sentiment import calculate_simple_sentiment, export_signals_for_backtesting
+from utils.calculate_signals import calculate_signals
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -37,7 +37,7 @@ def main():
     
     # Set date range for last 3 years
     end_date = date.today()
-    start_date = end_date - timedelta(days=3*365)  # 3 years ago
+    start_date = end_date - timedelta(days=700)  # 700 days
     
     print(f"Analyzing {len(gaming_tickers)} gaming company tickers:")
     print(f"Tickers: {', '.join(gaming_tickers)}")
@@ -66,12 +66,20 @@ def main():
     try:
         # Generate sentiment signals
         logger.info(f"Generating sentiment signals for {len(gaming_tickers)} tickers from {start_date} to {end_date}")
-        signals_df = calculate_simple_sentiment(
+        result = calculate_signals(
             tickers=gaming_tickers,
             start_date=start_date,
-            end_date=end_date,
-            lookback_days=lookback_days
+            end_date=end_date
         )
+        
+        # Extract signals dataframe from result
+        if isinstance(result, dict) and 'signals_df' in result:
+            signals_df = result['signals_df']
+        elif hasattr(result, 'signals_df'):
+            signals_df = result.signals_df
+        else:
+            # If result is already a dataframe
+            signals_df = result
         
         # Display summary
         print()
@@ -103,7 +111,18 @@ def main():
         
         # Export results
         output_file = f"data/gaming_sentiment_3years_{start_date}_{end_date}.csv"
-        success = export_signals_for_backtesting(signals_df, output_file)
+        
+        # Create data directory if it doesn't exist
+        from pathlib import Path
+        Path("data").mkdir(exist_ok=True)
+        
+        # Export to CSV
+        try:
+            signals_df.to_csv(output_file, index=False)
+            success = True
+        except Exception as e:
+            logger.error(f"Error exporting to CSV: {e}")
+            success = False
         
         if success:
             print()

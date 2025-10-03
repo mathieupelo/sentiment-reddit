@@ -40,15 +40,15 @@ GAMING_NEGATIVE_KEYWORDS = {
 
 # Company-to-game mapping for better ticker identification
 TICKER_GAME_MAPPING = {
-    'EA': ['Electronic Arts'],
-    'TTWO': ['Take-Two Interactive'],
+    'EA': ['Electronic Arts', 'EA Games'],
+    'TTWO': ['Take-Two Interactive', 'TTWO'],
     'NTES': ['NetEase'],
-    'RBLX': ['Roblox Corporation'],
-    'MSFT': ['Microsoft Corporation'],
-    'SONY': ['Sony Interactive Entertainment'],
-    'WBD': ['Warner Bros Games'],
-    'NCBDY': ['CD Projekt Red'],
-    'GDEV': ['Gaijin Entertainment'],
+    'RBLX': ['Roblox'],
+    'MSFT': ['Microsoft'],
+    'SONY': ['Sony'],
+    'WBD': ['Warner Bros'],
+    'NCBDY': ['CD Projekt'],
+    'GDEV': ['Gaijin'],
     'OTGLF': ['Outlook Games'],
     'SNAL': ['Snail Games'],
     'GRVY': ['Gravity Games']
@@ -89,7 +89,7 @@ class RedditAPIClient:
         return self.reddit is not None
     
     def search_posts(self, subreddits: List[str], keywords: List[str], 
-                    limit: int = 100, time_filter: str = 'week') -> List[Dict]:
+                    limit: int = 100, time_filter: str = 'week', ticker: str = None) -> List[Dict]:
         """
         Search for posts in specified subreddits containing keywords.
         
@@ -98,12 +98,16 @@ class RedditAPIClient:
             keywords: List of keywords to search for
             limit: Maximum number of posts to return
             time_filter: Time filter ('hour', 'day', 'week', 'month', 'year', 'all')
+            ticker: Ticker symbol to assign to posts (if None, uses first keyword)
             
         Returns:
             List of post dictionaries
         """
         if not self.is_available():
             return []
+        
+        # Use ticker if provided, otherwise use first keyword
+        post_ticker = ticker if ticker else keywords[0] if keywords else 'unknown'
         
         posts = []
         try:
@@ -122,7 +126,7 @@ class RedditAPIClient:
                         )
                         
                         for post in search_results:
-                            posts.append(self._extract_post_data(post, keyword))
+                            posts.append(self._extract_post_data(post, post_ticker))
                             
                         # Rate limiting
                         time.sleep(0.5)
@@ -246,16 +250,20 @@ def calculate_signals(tickers: Optional[List[str]] = None,
                 calculation_method = 'textblob_with_gaming_keywords'
                 posts_analyzed = len(posts_df[posts_df['ticker'] == ticker])
             
+            # Calculate confidence based on posts analyzed
+            confidence = min(posts_analyzed / 50.0, 1.0) if posts_analyzed > 0 else 0.0
+            
             signals_data.append({
                 'asof_date': current_date,
                 'ticker': ticker,
                 'signal_name': 'SENTIMENT_RDDT',
                 'value': aggregated_score,
+                'confidence': confidence,
+                'posts_analyzed': posts_analyzed,
+                'calculation_method': calculation_method,
                 'metadata': {
                     'subreddits_analyzed': subreddits,
-                    'calculation_method': calculation_method,
                     'data_source': 'reddit_api',
-                    'posts_analyzed': posts_analyzed,
                     'has_data': posts_analyzed > 0
                 }
             })
@@ -351,7 +359,8 @@ def _fetch_real_reddit_posts(subreddits: List[str],
                 subreddits=subreddits,
                 keywords=keywords,
                 limit=100,  # Increased limit per ticker
-                time_filter='month'  # Extended time filter to capture more posts
+                time_filter='month',  # Extended time filter to capture more posts
+                ticker=ticker  # Pass the ticker to ensure correct assignment
             )
             
             # Filter posts by date range

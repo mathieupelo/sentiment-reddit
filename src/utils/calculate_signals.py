@@ -40,18 +40,18 @@ GAMING_NEGATIVE_KEYWORDS = {
 
 # Company-to-game mapping for better ticker identification
 TICKER_GAME_MAPPING = {
-    'EA': ['fifa', 'madden', 'apex legends', 'battlefield', 'sims', 'ea sports', 'electronic arts', 'ea games', 'star wars', 'mass effect', 'dragon age', 'dead space'],
-    'TTWO': ['gta', 'red dead redemption', 'rockstar', 'take-two', 'grand theft auto', 'gta 6', 'gta v', 'rdr2', '2k games', 'nba 2k', 'wwe 2k'],
-    'NTES': ['diablo', 'overwatch', 'hearthstone', 'world of warcraft', 'blizzard', 'diablo 4', 'overwatch 2', 'wow', 'starcraft', 'warcraft'],
-    'RBLX': ['roblox', 'roblox stock', 'roblox corporation'],
-    'MSFT': ['xbox', 'minecraft', 'halo', 'forza', 'microsoft', 'xbox game pass', 'xbox series x', 'xbox series s', 'game pass', 'microsoft gaming', 'activision', 'call of duty'],
-    'SONY': ['playstation', 'spider-man', 'god of war', 'horizon', 'sony', 'ps5', 'playstation 5', 'spider-man 2', 'god of war ragnarok', 'horizon forbidden west', 'last of us', 'uncharted'],
-    'WBD': ['hogwarts legacy', 'mortal kombat', 'injustice', 'warner bros', 'mortal kombat 1', 'mk1', 'hogwarts', 'harry potter', 'dc games', 'batman'],
-    'NCBDY': ['cyberpunk', 'witcher', 'cd projekt', 'cyberpunk 2077', 'the witcher 3', 'witcher 4', 'cd projekt red', 'phantom liberty'],
-    'GDEV': ['war thunder', 'crossout', 'gaijin', 'enlisted', 'gaijin entertainment'],
-    'OTGLF': ['outlook games', 'outlook'],
-    'SNAL': ['snail games', 'snail'],
-    'GRVY': ['gravity games', 'gravity', 'raze']
+    'EA': ['Electronic Arts'],
+    'TTWO': ['Take-Two Interactive'],
+    'NTES': ['NetEase'],
+    'RBLX': ['Roblox Corporation'],
+    'MSFT': ['Microsoft Corporation'],
+    'SONY': ['Sony Interactive Entertainment'],
+    'WBD': ['Warner Bros Games'],
+    'NCBDY': ['CD Projekt Red'],
+    'GDEV': ['Gaijin Entertainment'],
+    'OTGLF': ['Outlook Games'],
+    'SNAL': ['Snail Games'],
+    'GRVY': ['Gravity Games']
 }
 
 

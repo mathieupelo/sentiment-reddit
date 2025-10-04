@@ -223,21 +223,22 @@ def calculate_signals(tickers: Optional[List[str]] = None,
     expected_signals = len(tickers) * ((end_date - start_date).days + 1)
     logger.info(f"Expected signals: {expected_signals} (guaranteed coverage for all date-ticker combinations)")
     
-    # Fetch Reddit posts and analyze sentiment
-    posts_df = get_reddit_posts(subreddits, tickers, start_date, end_date)
-    
-    # Process sentiment for each post
-    if not posts_df.empty:
-        posts_df['sentiment_score'] = posts_df['content'].apply(analyze_sentiment)
-        posts_df['sentiment_score'] = posts_df['sentiment_score'].fillna(0.0)
-    else:
-        logger.warning("No Reddit posts found - will use fallback scoring")
-    
     # Generate signals for EVERY date-ticker combination
     signals_data = []
     current_date = start_date
     
     while current_date <= end_date:
+        # Calculate lookback period for this date
+        lookback_start = current_date - timedelta(days=30)
+        
+        # Fetch Reddit posts for this specific date's lookback window
+        posts_df = get_reddit_posts(subreddits, tickers, lookback_start, current_date)
+        
+        # Process sentiment for each post
+        if not posts_df.empty:
+            posts_df['sentiment_score'] = posts_df['content'].apply(analyze_sentiment)
+            posts_df['sentiment_score'] = posts_df['sentiment_score'].fillna(0.0)
+        
         for ticker in tickers:
             # Always calculate a score, even if no posts exist for this date/ticker
             aggregated_score = aggregate_sentiment_scores(posts_df, ticker, current_date)
@@ -354,16 +355,16 @@ def _fetch_real_reddit_posts(subreddits: List[str],
             # Get keywords for this ticker
             keywords = TICKER_GAME_MAPPING.get(ticker, [ticker.lower()])
             
-            # Search for posts
+            # Search for posts (no time filter - we'll filter by date ourselves)
             posts = reddit_client.search_posts(
                 subreddits=subreddits,
                 keywords=keywords,
                 limit=100,  # Increased limit per ticker
-                time_filter='month',  # Extended time filter to capture more posts
+                time_filter='all',  # Get all posts, filter by date ourselves
                 ticker=ticker  # Pass the ticker to ensure correct assignment
             )
             
-            # Filter posts by date range
+            # Filter posts by the actual date range we want
             for post in posts:
                 post_date = datetime.fromtimestamp(post['created_utc']).date()
                 if start_date <= post_date <= end_date:

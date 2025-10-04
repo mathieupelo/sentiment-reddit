@@ -37,7 +37,7 @@ def main():
     
     # Set date range for last 3 years
     end_date = date.today()
-    start_date = end_date - timedelta(days=700)  # 700 days
+    start_date = end_date - timedelta(days=30)  # 30 days
     
     print(f"Analyzing {len(gaming_tickers)} gaming company tickers:")
     print(f"Tickers: {', '.join(gaming_tickers)}")

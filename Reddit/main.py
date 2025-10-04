@@ -35,7 +35,7 @@ def main():
         'WBD', 'NCBDY', 'GDEV', 'OTGLF', 'SNAL', 'GRVY'
     ]
     
-    # Set date range for last 3 years
+    # Set date range for 700 days
     end_date = date.today()
     start_date = end_date - timedelta(days=700)  # 700 days
     
@@ -50,7 +50,9 @@ def main():
     
     print("Configuration:")
     print(f"- Lookback days: {lookback_days}")
-    print(f"- Estimated runtime: 2-3 minutes (optimized cache-first approach)")
+    print(f"- Estimated runtime: 2-3 hours (700 days × 12 tickers)")
+    print(f"- Expected signals: {len(gaming_tickers) * 700}")
+    print(f"- Cache size: ~50-100 MB")
     print()
     
     # Confirm before proceeding

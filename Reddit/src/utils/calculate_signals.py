@@ -124,7 +124,7 @@ class RedditAPIClient:
                             search_query, 
                             limit=limit // len(keywords), 
                             time_filter=time_filter,
-                            sort='new'
+                            sort='top'
                         )
                         
                         for post in search_results:

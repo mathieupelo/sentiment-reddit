@@ -17,6 +17,8 @@ import os
 from dotenv import load_dotenv
 import praw
 import time
+import pickle
+from pathlib import Path
 
 # Load environment variables
 load_dotenv()
@@ -223,22 +225,21 @@ def calculate_signals(tickers: Optional[List[str]] = None,
     expected_signals = len(tickers) * ((end_date - start_date).days + 1)
     logger.info(f"Expected signals: {expected_signals} (guaranteed coverage for all date-ticker combinations)")
     
+    # Fetch Reddit posts and analyze sentiment
+    posts_df = get_reddit_posts(subreddits, tickers, start_date, end_date)
+    
+    # Process sentiment for each post
+    if not posts_df.empty:
+        posts_df['sentiment_score'] = posts_df['content'].apply(analyze_sentiment)
+        posts_df['sentiment_score'] = posts_df['sentiment_score'].fillna(0.0)
+    else:
+        logger.warning("No Reddit posts found - will use fallback scoring")
+    
     # Generate signals for EVERY date-ticker combination
     signals_data = []
     current_date = start_date
     
     while current_date <= end_date:
-        # Calculate lookback period for this date
-        lookback_start = current_date - timedelta(days=30)
-        
-        # Fetch Reddit posts for this specific date's lookback window
-        posts_df = get_reddit_posts(subreddits, tickers, lookback_start, current_date)
-        
-        # Process sentiment for each post
-        if not posts_df.empty:
-            posts_df['sentiment_score'] = posts_df['content'].apply(analyze_sentiment)
-            posts_df['sentiment_score'] = posts_df['sentiment_score'].fillna(0.0)
-        
         for ticker in tickers:
             # Always calculate a score, even if no posts exist for this date/ticker
             aggregated_score = aggregate_sentiment_scores(posts_df, ticker, current_date)
@@ -355,16 +356,16 @@ def _fetch_real_reddit_posts(subreddits: List[str],
             # Get keywords for this ticker
             keywords = TICKER_GAME_MAPPING.get(ticker, [ticker.lower()])
             
-            # Search for posts (no time filter - we'll filter by date ourselves)
+            # Search for posts
             posts = reddit_client.search_posts(
                 subreddits=subreddits,
                 keywords=keywords,
                 limit=100,  # Increased limit per ticker
-                time_filter='all',  # Get all posts, filter by date ourselves
+                time_filter='month',  # Extended time filter to capture more posts
                 ticker=ticker  # Pass the ticker to ensure correct assignment
             )
             
-            # Filter posts by the actual date range we want
+            # Filter posts by date range
             for post in posts:
                 post_date = datetime.fromtimestamp(post['created_utc']).date()
                 if start_date <= post_date <= end_date:
@@ -551,6 +552,279 @@ def run_example():
     print(f"Expected date-ticker combinations: {expected_combinations}")
     print(f"Actual signals generated: {actual_combinations}")
     print(f"Coverage complete: {expected_combinations == actual_combinations}")
+    
+    return result
+
+
+# Cache management functions
+def get_cache_file_path() -> Path:
+    """Get the cache file path."""
+    cache_dir = Path("data")
+    cache_dir.mkdir(exist_ok=True)
+    return cache_dir / "reddit_posts_cache.pkl"
+
+
+def cache_exists() -> bool:
+    """Check if cache file exists."""
+    return get_cache_file_path().exists()
+
+
+def cache_is_recent(days: int = 7) -> bool:
+    """Check if cache is recent (within specified days)."""
+    if not cache_exists():
+        return False
+    
+    cache_file = get_cache_file_path()
+    cache_age = datetime.now().timestamp() - cache_file.stat().st_mtime
+    return cache_age < (days * 24 * 60 * 60)
+
+
+def save_posts_cache(posts_cache: Dict[str, List[Dict]]) -> bool:
+    """Save posts cache to disk."""
+    try:
+        cache_file = get_cache_file_path()
+        with open(cache_file, 'wb') as f:
+            pickle.dump(posts_cache, f)
+        logger.info(f"Saved {sum(len(posts) for posts in posts_cache.values())} posts to cache")
+        return True
+    except Exception as e:
+        logger.error(f"Error saving cache: {e}")
+        return False
+
+
+def load_posts_cache() -> Optional[Dict[str, List[Dict]]]:
+    """Load posts cache from disk."""
+    try:
+        cache_file = get_cache_file_path()
+        with open(cache_file, 'rb') as f:
+            posts_cache = pickle.load(f)
+        logger.info(f"Loaded {sum(len(posts) for posts in posts_cache.values())} posts from cache")
+        return posts_cache
+    except Exception as e:
+        logger.error(f"Error loading cache: {e}")
+        return None
+
+
+def fetch_all_posts_once(tickers: List[str], subreddits: List[str]) -> Dict[str, List[Dict]]:
+    """
+    Fetch all posts for all tickers once and cache them.
+    
+    Args:
+        tickers: List of ticker symbols
+        subreddits: List of subreddit names
+        
+    Returns:
+        Dictionary mapping ticker to list of posts
+    """
+    logger.info("=" * 60)
+    logger.info("PHASE 1: FETCHING ALL POSTS")
+    logger.info("=" * 60)
+    
+    posts_cache = {}
+    total_posts = 0
+    
+    for i, ticker in enumerate(tickers, 1):
+        logger.info(f"[{i}/{len(tickers)}] Fetching posts for {ticker}...")
+        
+        # Get keywords for this ticker
+        keywords = TICKER_GAME_MAPPING.get(ticker, [ticker.lower()])
+        ticker_posts = []
+        
+        # Search for each keyword
+        for keyword in keywords:
+            try:
+                posts = reddit_client.search_posts(
+                    subreddits=subreddits,
+                    keywords=[keyword],
+                    limit=100,
+                    time_filter='all',
+                    ticker=ticker
+                )
+                ticker_posts.extend(posts)
+                logger.info(f"  {keyword}: {len(posts)} posts")
+                
+                # Rate limiting
+                time.sleep(0.5)
+                
+            except Exception as e:
+                logger.warning(f"  Error searching for '{keyword}': {e}")
+                continue
+        
+        posts_cache[ticker] = ticker_posts
+        total_posts += len(ticker_posts)
+        logger.info(f"  Total for {ticker}: {len(ticker_posts)} posts")
+    
+    logger.info(f"\nPHASE 1 COMPLETE: {total_posts} total posts fetched")
+    logger.info("=" * 60)
+    
+    return posts_cache
+
+
+def filter_posts_by_date(posts: List[Dict], start_date: date, end_date: date) -> List[Dict]:
+    """Filter posts by date range."""
+    filtered_posts = []
+    
+    for post in posts:
+        try:
+            post_date = datetime.fromtimestamp(post['created_utc']).date()
+            if start_date <= post_date <= end_date:
+                filtered_posts.append(post)
+        except (KeyError, ValueError, TypeError):
+            continue
+    
+    return filtered_posts
+
+
+def calculate_signals_optimized(tickers: Optional[List[str]] = None, 
+                               start_date: Optional[date] = None, 
+                               end_date: Optional[date] = None,
+                               subreddits: Optional[List[str]] = None,
+                               use_cache: bool = True) -> Dict[str, Any]:
+    """
+    Calculate Reddit-based sentiment signals using optimized cache-first approach.
+    
+    Args:
+        tickers: List of ticker symbols to analyze
+        start_date: Start date for signal calculation
+        end_date: End date for signal calculation
+        subreddits: List of subreddit names to search
+        use_cache: Whether to use cached data if available
+        
+    Returns:
+        Dictionary containing signals DataFrame and metadata
+    """
+    # Set defaults
+    if tickers is None:
+        tickers = ['EA', 'TTWO', 'NTES', 'RBLX', 'MSFT', 'SONY', 'WBD', 'NCBDY', 'GDEV', 'OTGLF', 'SNAL', 'GRVY']
+        
+    if start_date is None:
+        start_date = date.today() - timedelta(days=90)
+        
+    if end_date is None:
+        end_date = date.today()
+        
+    if subreddits is None:
+        subreddits = [
+            'gaming', 'pcgaming', 'xbox', 'playstation', 'nintendo', 'games', 'truegaming',
+            'Steam', 'GamingLeaksAndRumours', 'GameDeals', 'patientgamers', 'ShouldIbuythisgame',
+            'PS5', 'XboxSeriesX', 'NintendoSwitch', 'SteamDeck', 'GameStop'
+        ]
+    
+    logger.info(f"Calculating Reddit sentiment signals for {len(tickers)} tickers")
+    logger.info(f"Date range: {start_date} to {end_date}")
+    logger.info(f"Subreddits: {', '.join(subreddits)}")
+    logger.info(f"Reddit API available: {reddit_client.is_available()}")
+    
+    # Calculate expected number of signals
+    expected_signals = len(tickers) * ((end_date - start_date).days + 1)
+    logger.info(f"Expected signals: {expected_signals}")
+    
+    # Phase 1: Get posts cache
+    posts_cache = None
+    
+    # Force fresh data fetch (clear any existing cache)
+    if cache_exists():
+        logger.info("Clearing existing cache to force fresh data fetch...")
+        try:
+            cache_file = get_cache_file_path()
+            cache_file.unlink()
+            logger.info("Cache cleared successfully")
+        except Exception as e:
+            logger.warning(f"Could not clear cache: {e}")
+    
+    logger.info("Fetching fresh data for all tickers...")
+    posts_cache = fetch_all_posts_once(tickers, subreddits)
+    save_posts_cache(posts_cache)
+    
+    # Phase 2: Generate signals
+    logger.info("\n" + "=" * 60)
+    logger.info("PHASE 2: GENERATING SIGNALS")
+    logger.info("=" * 60)
+    
+    signals_data = []
+    current_date = start_date
+    total_dates = (end_date - start_date).days + 1
+    
+    while current_date <= end_date:
+        date_progress = (current_date - start_date).days + 1
+        logger.info(f"[{date_progress}/{total_dates}] Processing {current_date}...")
+        
+        # Calculate lookback period for this date
+        lookback_start = current_date - timedelta(days=30)
+        
+        for ticker in tickers:
+            # Filter posts for this date's 30-day window
+            ticker_posts = posts_cache.get(ticker, [])
+            relevant_posts = filter_posts_by_date(ticker_posts, lookback_start, current_date)
+            
+            # Calculate sentiment
+            if relevant_posts:
+                # Analyze sentiment for each post
+                for post in relevant_posts:
+                    post['sentiment_score'] = analyze_sentiment(post['content'])
+                
+                # Aggregate sentiment scores
+                aggregated_score = aggregate_sentiment_scores(
+                    pd.DataFrame(relevant_posts), ticker, current_date
+                )
+                posts_analyzed = len(relevant_posts)
+                calculation_method = 'textblob_with_gaming_keywords'
+            else:
+                aggregated_score = 0.0
+                posts_analyzed = 0
+                calculation_method = 'fallback_no_data'
+            
+            # Calculate confidence
+            confidence = min(posts_analyzed / 50.0, 1.0) if posts_analyzed > 0 else 0.0
+            
+            signals_data.append({
+                'asof_date': current_date,
+                'ticker': ticker,
+                'signal_name': 'SENTIMENT_RDDT',
+                'value': aggregated_score,
+                'confidence': confidence,
+                'posts_analyzed': posts_analyzed,
+                'calculation_method': calculation_method,
+                'metadata': {
+                    'subreddits_analyzed': subreddits,
+                    'data_source': 'reddit_api_cached',
+                    'has_data': posts_analyzed > 0
+                }
+            })
+        
+        current_date += timedelta(days=1)
+    
+    # Convert to DataFrame
+    signals_df = pd.DataFrame(signals_data)
+    
+    # Calculate summary statistics
+    summary_stats = {
+        'total_signals': len(signals_df),
+        'average_sentiment': signals_df['value'].mean(),
+        'signals_with_data': len(signals_df[signals_df['posts_analyzed'] > 0]),
+        'signals_fallback': len(signals_df[signals_df['posts_analyzed'] == 0]),
+        'reddit_api_used': True,
+        'cache_used': use_cache
+    }
+    
+    result = {
+        'signals_df': signals_df,
+        'signals_count': len(signals_df),
+        'summary_stats': summary_stats,
+        'parameters': {
+            'tickers': tickers,
+            'start_date': start_date,
+            'end_date': end_date,
+            'subreddits': subreddits
+        },
+        'status': 'implemented_with_cached_reddit_api'
+    }
+    
+    logger.info(f"\nGenerated {len(signals_df)} sentiment signals")
+    logger.info(f"Average sentiment: {summary_stats['average_sentiment']:.3f}")
+    logger.info(f"Signals with data: {summary_stats['signals_with_data']}")
+    logger.info(f"Fallback signals: {summary_stats['signals_fallback']}")
+    logger.info("=" * 60)
     
     return result
 

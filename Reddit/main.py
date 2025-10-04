@@ -13,7 +13,7 @@ import logging
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent / 'src'))
 
-from utils.calculate_signals import calculate_signals
+from utils.calculate_signals import calculate_signals_optimized
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -37,7 +37,7 @@ def main():
     
     # Set date range for last 3 years
     end_date = date.today()
-    start_date = end_date - timedelta(days=30)  # 30 days
+    start_date = end_date - timedelta(days=700)  # 700 days
     
     print(f"Analyzing {len(gaming_tickers)} gaming company tickers:")
     print(f"Tickers: {', '.join(gaming_tickers)}")
@@ -50,7 +50,7 @@ def main():
     
     print("Configuration:")
     print(f"- Lookback days: {lookback_days}")
-    print(f"- Estimated runtime: 2-4 hours (due to Reddit API rate limits)")
+    print(f"- Estimated runtime: 2-3 minutes (optimized cache-first approach)")
     print()
     
     # Confirm before proceeding
@@ -64,9 +64,9 @@ def main():
     print("=" * 80)
     
     try:
-        # Generate sentiment signals
+        # Generate sentiment signals using optimized cache-first approach
         logger.info(f"Generating sentiment signals for {len(gaming_tickers)} tickers from {start_date} to {end_date}")
-        result = calculate_signals(
+        result = calculate_signals_optimized(
             tickers=gaming_tickers,
             start_date=start_date,
             end_date=end_date

@@ -298,12 +298,16 @@ def main():
     print(f"Subreddits: {len(subreddits)} gaming subreddits")
     print()
     
-    # Get MySQL credentials
+    # Get MySQL credentials from environment variables
     print("MySQL Configuration:")
-    host = input("Host (default: localhost): ").strip() or 'localhost'
-    user = input("Username (default: root): ").strip() or 'root'
-    password = input("Password: ").strip()
-    database = input("Database (default: reddit_sentiment): ").strip() or 'reddit_sentiment'
+    host = os.getenv('MYSQL_HOST', 'localhost')
+    user = os.getenv('MYSQL_USER', 'root')
+    password = os.getenv('MYSQL_PASSWORD', '')
+    database = os.getenv('MYSQL_DATABASE', 'reddit_sentiment')
+    
+    print(f"Host: {host}")
+    print(f"User: {user}")
+    print(f"Database: {database}")
     print()
     
     # Create collector

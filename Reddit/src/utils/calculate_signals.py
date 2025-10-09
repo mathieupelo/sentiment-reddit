@@ -19,11 +19,134 @@ import praw
 import time
 import pickle
 from pathlib import Path
+import torch
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
 
-# Load environment variables
-load_dotenv()
-
+# Set up logger first
 logger = logging.getLogger(__name__)
+
+# Load environment variables (with error handling for encoding issues)
+try:
+    load_dotenv()
+except Exception as e:
+    logger.warning(f"Could not load .env file: {e}. Attempting manual load...")
+    # Try to manually load .env file with different encodings
+    env_path = Path(__file__).parent.parent.parent / '.env'
+    if env_path.exists():
+        try:
+            # Try UTF-8 first
+            with open(env_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith('#') and '=' in line:
+                        key, value = line.split('=', 1)
+                        os.environ[key.strip()] = value.strip()
+            logger.info("Successfully loaded .env file manually")
+        except Exception as e2:
+            logger.warning(f"Manual .env load also failed: {e2}. Will use environment variables if set.")
+
+
+class FinBERTAnalyzer:
+    """Financial sentiment analyzer using FinBERT model with fallback handling."""
+    
+    def __init__(self, model_name: str = "ProsusAI/finbert"):
+        """Initialize FinBERT model and tokenizer."""
+        self.model_name = model_name
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.model = None
+        self.tokenizer = None
+        
+        try:
+            logger.info("Loading FinBERT model...")
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                model_name,
+                cache_dir=None,  # Use default cache location
+                local_files_only=False
+            )
+            self.model = AutoModelForSequenceClassification.from_pretrained(
+                model_name,
+                cache_dir=None,  # Use default cache location
+                local_files_only=False
+            )
+            self.model.to(self.device)
+            self.model.eval()
+            
+            logger.info(f"FinBERT loaded successfully on {self.device}")
+            self.available = True
+            
+        except Exception as e:
+            logger.warning(f"Failed to load FinBERT: {e}")
+            logger.warning("Will use TextBlob fallback for sentiment analysis")
+            self.available = False
+    
+    def analyze_sentiment(self, text: str) -> float:
+        """
+        Analyze sentiment using FinBERT.
+        
+        Args:
+            text: Text to analyze
+            
+        Returns:
+            Sentiment score from -1 (negative) to 1 (positive)
+        """
+        if not self.available or not text or not isinstance(text, str):
+            return 0.0
+        
+        try:
+            # Clean and truncate text
+            cleaned_text = self._clean_text(text)
+            if len(cleaned_text.strip()) < 10:
+                return 0.0
+            
+            # Tokenize
+            inputs = self.tokenizer(
+                cleaned_text, 
+                return_tensors="pt", 
+                truncation=True, 
+                max_length=512,
+                padding=True
+            )
+            
+            # Move to device
+            inputs = {k: v.to(self.device) for k, v in inputs.items()}
+            
+            # Get predictions
+            with torch.no_grad():
+                outputs = self.model(**inputs)
+                probs = torch.nn.functional.softmax(outputs.logits, dim=-1)
+            
+            # FinBERT returns: [negative, neutral, positive]
+            neg, neu, pos = probs[0].cpu().numpy()
+            
+            # Convert to -1 to 1 scale
+            sentiment_score = pos - neg
+            
+            # Ensure score is in [-1, 1] range
+            sentiment_score = np.clip(sentiment_score, -1.0, 1.0)
+            
+            return float(sentiment_score)
+            
+        except Exception as e:
+            logger.warning(f"Error analyzing sentiment with FinBERT: {e}")
+            return 0.0
+    
+    def _clean_text(self, text: str) -> str:
+        """Clean text for FinBERT processing."""
+        # Remove URLs
+        text = re.sub(r'http\S+|www\S+|https\S+', '', text, flags=re.MULTILINE)
+        
+        # Remove excessive whitespace
+        text = re.sub(r'\s+', ' ', text).strip()
+        
+        # Truncate if too long (FinBERT has 512 token limit)
+        if len(text) > 2000:
+            text = text[:2000] + "..."
+        
+        return text
+
+
+# Initialize FinBERT analyzer
+finbert_analyzer = FinBERTAnalyzer()
 
 # Gaming-specific sentiment keywords for enhanced analysis
 GAMING_POSITIVE_KEYWORDS = {
@@ -53,7 +176,11 @@ TICKER_GAME_MAPPING = {
     'GDEV': ['Gaijin'],
     'OTGLF': ['Outlook Games'],
     'SNAL': ['Snail Games'],
-    'GRVY': ['Gravity Games']
+    'GRVY': ['Gravity Games'],
+    'SQNXF': ['Square Enix', 'SquareEnix'],
+    'KSFTF': ['Kingsoft', 'Kingsoft Corp'],
+    'KNMCY': ['KONAMI', 'Konami Group'],
+    'NEXOY': ['NEXON', 'Nexon Co']
 }
 
 
@@ -200,7 +327,7 @@ def calculate_signals(tickers: Optional[List[str]] = None,
     
     # Set default values if not provided
     if tickers is None:
-        tickers = ['EA', 'TTWO', 'NTES', 'RBLX', 'MSFT', 'SONY', 'WBD', 'NCBDY', 'GDEV', 'OTGLF', 'SNAL', 'GRVY']
+        tickers = ['EA', 'TTWO', 'NTES', 'RBLX', 'MSFT', 'SONY', 'WBD', 'NCBDY', 'GDEV', 'OTGLF', 'SNAL', 'GRVY', 'SQNXF', 'KSFTF', 'KNMCY', 'NEXOY']
     
     if start_date is None:
         start_date = date.today() - timedelta(days=90)  # Extended to 3 months
@@ -386,10 +513,10 @@ def _fetch_real_reddit_posts(subreddits: List[str],
 
 def analyze_sentiment(text: str) -> float:
     """
-    Analyze sentiment of text content using TextBlob and gaming-specific keywords.
+    Analyze sentiment of text content using FinBERT (if available) or TextBlob with gaming-specific keywords.
     
-    This function combines TextBlob's sentiment analysis with gaming-specific
-    keyword detection to provide more accurate sentiment scoring for gaming content.
+    This function combines financial sentiment analysis with gaming-specific
+    keyword detection to provide accurate sentiment scoring for gaming content.
     
     Args:
         text: Text content to analyze
@@ -404,16 +531,21 @@ def analyze_sentiment(text: str) -> float:
         # Clean and preprocess text
         cleaned_text = _clean_text(text)
         
-        # Get TextBlob sentiment score
-        blob = TextBlob(cleaned_text)
-        textblob_score = blob.sentiment.polarity
-        
         # Get gaming-specific keyword sentiment
         keyword_score = _calculate_gaming_keyword_sentiment(cleaned_text)
         
-        # Combine TextBlob and keyword scores (weighted average)
-        # TextBlob gets 70% weight, keywords get 30% weight
-        combined_score = (0.7 * textblob_score) + (0.3 * keyword_score)
+        # Try FinBERT first, fallback to TextBlob
+        if finbert_analyzer.available:
+            # Use FinBERT if available
+            finbert_score = finbert_analyzer.analyze_sentiment(cleaned_text)
+            # FinBERT gets 85% weight, keywords get 15% weight
+            combined_score = (0.85 * finbert_score) + (0.15 * keyword_score)
+        else:
+            # Fallback to TextBlob
+            blob = TextBlob(cleaned_text)
+            textblob_score = blob.sentiment.polarity
+            # TextBlob gets 70% weight, keywords get 30% weight
+            combined_score = (0.7 * textblob_score) + (0.3 * keyword_score)
         
         # Normalize to ensure score is between -1 and 1
         final_score = max(-1.0, min(1.0, combined_score))
@@ -695,7 +827,7 @@ def calculate_signals_optimized(tickers: Optional[List[str]] = None,
     """
     # Set defaults
     if tickers is None:
-        tickers = ['EA', 'TTWO', 'NTES', 'RBLX', 'MSFT', 'SONY', 'WBD', 'NCBDY', 'GDEV', 'OTGLF', 'SNAL', 'GRVY']
+        tickers = ['EA', 'TTWO', 'NTES', 'RBLX', 'MSFT', 'SONY', 'WBD', 'NCBDY', 'GDEV', 'OTGLF', 'SNAL', 'GRVY', 'SQNXF', 'KSFTF', 'KNMCY', 'NEXOY']
         
     if start_date is None:
         start_date = date.today() - timedelta(days=90)

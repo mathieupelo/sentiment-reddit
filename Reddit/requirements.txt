@@ -19,7 +19,9 @@ scipy>=1.9.0
 # Logging and configuration
 pyyaml>=6.0
 
+# FinBERT sentiment analysis
+transformers>=4.30.0
+torch>=2.0.0
+
 # Optional: Advanced NLP libraries for more sophisticated sentiment analysis
 # nltk>=3.8.0
-# transformers>=4.20.0
-# torch>=1.12.0

@@ -280,7 +280,8 @@ def main():
     
     # Configuration
     tickers = ['EA', 'TTWO', 'NTES', 'RBLX', 'MSFT', 'SONY', 
-               'WBD', 'NCBDY', 'GDEV', 'OTGLF', 'SNAL', 'GRVY']
+               'WBD', 'NCBDY', 'GDEV', 'OTGLF', 'SNAL', 'GRVY',
+               'SQNXF', 'KSFTF', 'KNMCY', 'NEXOY']
     
     print(f"Tickers: {', '.join(tickers)}")
     print()

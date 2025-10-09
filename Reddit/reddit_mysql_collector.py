@@ -286,7 +286,8 @@ def main():
     
     # Configuration
     tickers = ['EA', 'TTWO', 'NTES', 'RBLX', 'MSFT', 'SONY', 
-               'WBD', 'NCBDY', 'GDEV', 'OTGLF', 'SNAL', 'GRVY']
+               'WBD', 'NCBDY', 'GDEV', 'OTGLF', 'SNAL', 'GRVY',
+               'SQNXF', 'KSFTF', 'KNMCY', 'NEXOY']
     
     subreddits = [
         'gaming', 'pcgaming', 'xbox', 'playstation', 'nintendo', 'games', 'truegaming',

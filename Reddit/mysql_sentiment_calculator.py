@@ -23,7 +23,8 @@ from utils.calculate_signals import (
     analyze_sentiment, 
     aggregate_sentiment_scores, 
     _clean_text, 
-    _calculate_gaming_keyword_sentiment
+    _calculate_gaming_keyword_sentiment,
+    finbert_analyzer
 )
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -154,13 +155,16 @@ class MySQLSentimentCalculator:
         posts_analyzed = len(posts_df)
         confidence = min(posts_analyzed / 50.0, 1.0) if posts_analyzed > 0 else 0.0
         
+        # Determine which method was actually used
+        calculation_method = 'finbert_with_gaming_keywords' if finbert_analyzer.available else 'textblob_with_gaming_keywords'
+        
         return {
             'asof_date': target_date,
             'ticker': ticker,
             'sentiment_score': aggregated_score,
             'posts_analyzed': posts_analyzed,
             'confidence': confidence,
-            'calculation_method': 'textblob_with_gaming_keywords'
+            'calculation_method': calculation_method
         }
     
     def calculate_signals_for_period(self, tickers: List[str], start_date: date, end_date: date, 

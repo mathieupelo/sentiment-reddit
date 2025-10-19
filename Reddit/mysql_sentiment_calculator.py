@@ -156,7 +156,7 @@ class MySQLSentimentCalculator:
         confidence = min(posts_analyzed / 50.0, 1.0) if posts_analyzed > 0 else 0.0
         
         # Determine which method was actually used
-        calculation_method = 'finbert_with_gaming_keywords' if finbert_analyzer.available else 'textblob_with_gaming_keywords'
+        calculation_method = 'finbert' if finbert_analyzer.available else 'textblob'
         
         return {
             'asof_date': target_date,

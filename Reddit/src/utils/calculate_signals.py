@@ -513,10 +513,10 @@ def _fetch_real_reddit_posts(subreddits: List[str],
 
 def analyze_sentiment(text: str) -> float:
     """
-    Analyze sentiment of text content using FinBERT (if available) or TextBlob with gaming-specific keywords.
+    Analyze sentiment of text content using FinBERT (if available) or TextBlob.
     
-    This function combines financial sentiment analysis with gaming-specific
-    keyword detection to provide accurate sentiment scoring for gaming content.
+    Uses pure FinBERT for sentiment analysis when available, with TextBlob
+    as a fallback if FinBERT fails to load.
     
     Args:
         text: Text content to analyze
@@ -531,24 +531,17 @@ def analyze_sentiment(text: str) -> float:
         # Clean and preprocess text
         cleaned_text = _clean_text(text)
         
-        # Get gaming-specific keyword sentiment
-        keyword_score = _calculate_gaming_keyword_sentiment(cleaned_text)
-        
         # Try FinBERT first, fallback to TextBlob
         if finbert_analyzer.available:
-            # Use FinBERT if available
-            finbert_score = finbert_analyzer.analyze_sentiment(cleaned_text)
-            # FinBERT gets 85% weight, keywords get 15% weight
-            combined_score = (0.85 * finbert_score) + (0.15 * keyword_score)
+            # Use 100% FinBERT
+            sentiment_score = finbert_analyzer.analyze_sentiment(cleaned_text)
         else:
-            # Fallback to TextBlob
+            # Fallback to 100% TextBlob
             blob = TextBlob(cleaned_text)
-            textblob_score = blob.sentiment.polarity
-            # TextBlob gets 70% weight, keywords get 30% weight
-            combined_score = (0.7 * textblob_score) + (0.3 * keyword_score)
+            sentiment_score = blob.sentiment.polarity
         
         # Normalize to ensure score is between -1 and 1
-        final_score = max(-1.0, min(1.0, combined_score))
+        final_score = max(-1.0, min(1.0, sentiment_score))
         
         return final_score
         

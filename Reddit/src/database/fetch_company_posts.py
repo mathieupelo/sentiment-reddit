@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import time
 from collections import defaultdict
 from dataclasses import dataclass
@@ -29,13 +30,6 @@ import psycopg
 from praw.models import Submission
 from prawcore.exceptions import RequestException, ResponseException, ServerError, TooManyRequests
 
-from Reddit.src.database.fetch_single_post import (
-    MissingEnvironmentError,
-    RedditPost,
-    require_env,
-)
-from Reddit.src.database.verify_connection import INSERT_SQL, ensure_table
-
 logger = logging.getLogger(__name__)
 
 DEFAULT_LOOKBACK_DAYS = 7
@@ -43,6 +37,157 @@ PER_DAY_CAP = 200
 SEARCH_LIMIT = 1000
 SLEEP_SECONDS = 0.3
 SLEEP_EVERY = 20
+
+POST_TABLE_SQL = """
+create table if not exists reddit_posts (
+    id bigint generated always as identity primary key,
+    reddit_id text not null,
+    title text not null,
+    content text,
+    author text,
+    subreddit text not null,
+    created_datetime timestamptz not null,
+    upvotes integer default 0,
+    num_comments integer default 0,
+    url text not null,
+    ticker text,
+    keyword_matched text,
+    collected_at timestamptz default now()
+);
+"""
+
+ALTER_RENAME_TITLE_SQL = """
+do $$
+begin
+    if exists (
+        select 1 from information_schema.columns
+        where table_name = 'reddit_posts' and column_name = 'post_title'
+    ) then
+        alter table reddit_posts rename column post_title to title;
+    end if;
+end;
+$$;
+"""
+
+ALTER_RENAME_URL_SQL = """
+do $$
+begin
+    if exists (
+        select 1 from information_schema.columns
+        where table_name = 'reddit_posts' and column_name = 'post_url'
+    ) then
+        alter table reddit_posts rename column post_url to url;
+    end if;
+end;
+$$;
+"""
+
+ALTER_RENAME_CREATED_SQL = """
+do $$
+begin
+    if exists (
+        select 1 from information_schema.columns
+        where table_name = 'reddit_posts' and column_name = 'created_utc'
+    ) then
+        alter table reddit_posts rename column created_utc to created_datetime;
+    end if;
+end;
+$$;
+"""
+
+POST_TABLE_ALTERS = (
+    "alter table reddit_posts add column if not exists reddit_id text",
+    "alter table reddit_posts add column if not exists title text",
+    "alter table reddit_posts alter column title set not null",
+    "alter table reddit_posts add column if not exists content text",
+    "alter table reddit_posts add column if not exists author text",
+    "alter table reddit_posts add column if not exists subreddit text",
+    "alter table reddit_posts alter column subreddit set not null",
+    "alter table reddit_posts add column if not exists created_datetime timestamptz",
+    "alter table reddit_posts alter column created_datetime set not null",
+    "alter table reddit_posts add column if not exists upvotes integer default 0",
+    "alter table reddit_posts alter column upvotes set default 0",
+    "alter table reddit_posts add column if not exists num_comments integer default 0",
+    "alter table reddit_posts alter column num_comments set default 0",
+    "alter table reddit_posts add column if not exists url text",
+    "alter table reddit_posts alter column url set not null",
+    "alter table reddit_posts add column if not exists ticker text",
+    "alter table reddit_posts add column if not exists keyword_matched text",
+    "alter table reddit_posts add column if not exists collected_at timestamptz default now()",
+    "alter table reddit_posts alter column collected_at set default now()",
+)
+
+INSERT_SQL = """
+insert into reddit_posts (
+    reddit_id,
+    title,
+    content,
+    author,
+    subreddit,
+    created_datetime,
+    upvotes,
+    num_comments,
+    url,
+    ticker,
+    keyword_matched,
+    collected_at
+)
+values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+returning id, collected_at;
+"""
+
+
+class MissingEnvironmentError(RuntimeError):
+    pass
+
+
+def require_env(name: str) -> str:
+    value = os.getenv(name)
+    if not value:
+        raise MissingEnvironmentError(f"Environment variable {name} is required.")
+    return value
+
+
+def ensure_table(database_url: str) -> None:
+    with psycopg.connect(database_url, autocommit=True) as conn:
+        conn.execute(POST_TABLE_SQL)
+        conn.execute(ALTER_RENAME_TITLE_SQL)
+        conn.execute(ALTER_RENAME_URL_SQL)
+        conn.execute(ALTER_RENAME_CREATED_SQL)
+        for statement in POST_TABLE_ALTERS:
+            conn.execute(statement)
+
+
+@dataclass
+class RedditPost:
+    reddit_id: str
+    title: str
+    content: str
+    author: Optional[str]
+    subreddit: str
+    created_datetime: datetime
+    upvotes: int
+    num_comments: int
+    url: str
+    ticker: Optional[str]
+    keyword_matched: Optional[str]
+    collected_at: datetime
+
+    def as_tuple(self) -> tuple:
+        return (
+            self.reddit_id,
+            self.title,
+            self.content,
+            self.author,
+            self.subreddit,
+            self.created_datetime,
+            self.upvotes,
+            self.num_comments,
+            self.url,
+            self.ticker,
+            self.keyword_matched,
+            self.collected_at,
+        )
 
 
 @dataclass(frozen=True)
